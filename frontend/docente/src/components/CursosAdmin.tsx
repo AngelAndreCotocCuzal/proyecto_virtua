@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { getJson, postJson, API_BASE } from '../utils/api'
+import { getJson } from '../utils/api'
 
 export default function CursosAdmin({ token }: any){
   const [cursos, setCursos] = useState<any[]>([])

@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react'
 import Sidebar from './Sidebar'
 import Toast from './Toast'
-import { getJson, postJson, API_BASE } from '../utils/api'
+import { getJson, postJson, requestJson } from '../utils/api'
 
 export default function Dashboard({ token, onLogout }: any){
   const [view, setView] = useState('home')
@@ -28,7 +28,7 @@ export default function Dashboard({ token, onLogout }: any){
     // cargar cursos del docente
     (async ()=>{
       try{
-        const r = await fetch(`${API_BASE}/cursos`, { headers: { Authorization: `Bearer ${token}` } })
+        const r = await getJson('/cursos', token)
         if(!r.ok) return setMisCursos([])
         const j = await r.json()
         setMisCursos(j || [])
@@ -88,7 +88,7 @@ export default function Dashboard({ token, onLogout }: any){
                     <div className={`px-2 py-1 rounded-full text-sm ${c.habilitado ? 'bg-green-500 text-white' : 'bg-slate-300 text-slate-700'}`}>{c.habilitado ? 'Habilitado' : 'Deshabilitado'}</div>
                     <button className="px-3 py-1 bg-slate-800 text-white rounded text-sm" onClick={async ()=>{
                       try{
-                        const res = await fetch(`${API_BASE}/cursos/${c.id}`, { method: 'PATCH', headers: { 'Content-Type':'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ habilitado: !c.habilitado }) })
+                        const res = await requestJson('PATCH', `/cursos/${c.id}`, token, { habilitado: !c.habilitado })
                         if(!res.ok) throw new Error(await res.text())
                         const updated = await res.json()
                         setMisCursos(ms=>ms.map(m=> m.id===updated.id ? updated : m))

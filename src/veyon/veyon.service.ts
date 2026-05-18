@@ -25,76 +25,94 @@ export class VeyonService {
     private controlState: ControlState,
   ) {}
 
-  async exportar() {
+  async aplicarVeyon() {
     const sesionId = this.controlState.sesion_activa_id;
     if (!sesionId) throw new BadRequestException('No hay sesión activa para exportar a Veyon');
 
-    // Directiva: obtener asistencias confirmadas y cruzar por MAC con las PCs en línea
-    const asistencias = await this.asistenciaRepo.find({ where: { sesion: { id: sesionId }, confirmada: true }, relations: ['alumno'] });
+    // 1. Obtener asistencias confirmadas de la sesión actual
+    const asistencias = await this.asistenciaRepo.find({ 
+      where: { sesion: { id: sesionId }, confirmada: true }, 
+      relations: ['alumno'] 
+    });
 
-    // Mapear mac -> nombre de alumno desde asistencias
+    if (asistencias.length === 0) {
+      throw new BadRequestException('No hay alumnos con asistencia confirmada todavía.');
+    }
+
+    // Mapear MACs a nombres de alumnos (normalizando a minúsculas)
     const macToAlumnoName: Record<string, string> = {};
-    const macs: string[] = [];
+    const macsValidas: string[] = [];
+    
     for (const a of asistencias) {
       if (a.mac) {
-        macToAlumnoName[a.mac] = a.alumno ? a.alumno.nombre : 'Desconocido';
-        macs.push(a.mac);
+        const normalizedMac = a.mac.toLowerCase().trim();
+        macToAlumnoName[normalizedMac] = a.alumno ? a.alumno.nombre : 'Desconocido';
+        macsValidas.push(normalizedMac);
       }
     }
 
-    // Obtener PCs en línea cuyo MAC esté en la lista de asistencias
-    const pcs = macs.length
-      ? await this.pcRepo.createQueryBuilder('pc').where('pc.en_linea = :enlinea', { enlinea: true }).andWhere('pc.mac IN (:...macs)', { macs }).getMany()
-      : [];
+    // 2. Obtener las PCs que el Agente Python mantiene "en_linea"
+    const pcsEnLinea = await this.pcRepo.find({ where: { en_linea: true } });
 
-    const networkObjects = pcs.map((p) => ({ type: 'computer', name: macToAlumnoName[p.mac] ?? 'Desconocido', hostAddress: p.ip }));
+    // Filtrar las PCs que correspondan únicamente a los alumnos confirmados
+    const pcsFiltradas = pcsEnLinea.filter(pc => macsValidas.includes(pc.mac.toLowerCase().trim()));
 
-    const payload = { NetworkObjects: networkObjects };
+    if (pcsFiltradas.length === 0) {
+      return { message: 'Veyon no se actualizó: No hay PCs en línea que coincidan con asistencias confirmadas.' };
+    }
 
-    // Create temp file
-    const filePath = join(tmpdir(), `veyon_export_${Date.now()}.json`);
-    await fs.writeFile(filePath, JSON.stringify(payload, null, 2), 'utf8');
+    // 3. Construir el archivo CSV con la estructura nativa que lee Veyon CLI
+    // Formato por línea: Ubicación/Sala, Nombre del Objeto, IP/Hostname, MAC
+    const salaVirtual = 'ExamOS_Sala';
+    let csvContent = '';
+    
+    for (const pc of pcsFiltradas) {
+      const alumnoNombre = macToAlumnoName[pc.mac.toLowerCase().trim()] || 'Estudiante';
+      // Limpiar comas internas del nombre por seguridad en el formato CSV
+      const nombreLimpio = alumnoNombre.replace(/,/g, ' '); 
+      csvContent += `${salaVirtual},${nombreLimpio},${pc.ip},${pc.mac}\n`;
+    }
 
-    const cliPath = process.env.PlaintextVEYON_CLI_PATH;
+    // 4. Escribir el archivo CSV temporal
+    const filePath = join(tmpdir(), `veyon_sync_${Date.now()}.csv`);
+    await fs.writeFile(filePath, csvContent, 'utf8');
+
+    // Cambiado a VEYON_CLI_PATH (asegúrate de tenerlo así en tu archivo .env)
+    const cliPath = process.env.VEYON_CLI_PATH; 
     if (!cliPath) {
       await fs.unlink(filePath).catch(() => {});
-      throw new InternalServerErrorException('No se encontró el ejecutable de veyon-cli. Verifique su archivo .env');
+      throw new InternalServerErrorException('No se configuró la variable VEYON_CLI_PATH en el entorno.');
     }
 
-    // Verificar que el ejecutable existe
     try {
       await fs.access(cliPath);
-    } catch (err) {
+    } catch {
       await fs.unlink(filePath).catch(() => {});
-      throw new InternalServerErrorException('No se encontró el ejecutable de veyon-cli. Verifique su archivo .env');
+      throw new InternalServerErrorException(`El ejecutable veyon-cli no se encuentra en la ruta: ${cliPath}`);
     }
 
-    // Ejecutar CLI (usa --clear para evitar duplicados si lo soporta)
-    // Nota: este proceso puede requerir permisos elevados en Windows (ejecutar Node/Nest como Administrador)
     try {
-      // args: import <file> --clear
-      const { stdout, stderr } = await execFileAsync(cliPath, ['import', filePath, '--clear'], { timeout: 30000 });
+      // 5. Ejecutar comando de Veyon CLI para limpiar computadoras previas (evita duplicidad de pantallas de otras clases)
+      await execFileAsync(cliPath, ['networkobjects', 'clear'], { timeout: 10000 }).catch(() => {});
+
+      // 6. Importar el nuevo mapa indicándole el orden de las columnas de nuestro CSV
+      const { stderr } = await execFileAsync(
+        cliPath, 
+        ['networkobjects', 'import', filePath, '%location%,%name%,%host%,%mac%'], 
+        { timeout: 20000 }
+      );
+
       if (stderr && stderr.toString().trim().length > 0) {
-        // registrar detalle y lanzar excepción
-        const logPath = join(tmpdir(), `veyon_cli_stderr_${Date.now()}.log`);
-        const content = `STDERR:\n${stderr}\n\nSTDOUT:\n${stdout}`;
-        await fs.writeFile(logPath, content, 'utf8').catch(() => {});
-        await fs.unlink(filePath).catch(() => {});
-        throw new InternalServerErrorException(`Error al ejecutar veyon-cli. Ver log: ${logPath}`);
+        throw new Error(stderr.toString());
       }
-    } catch (err) {
+    } catch (err: any) {
       await fs.unlink(filePath).catch(() => {});
-      // intentar extraer stdout/stderr del error
-      const stdout = (err as any)?.stdout ?? '';
-      const stderr = (err as any)?.stderr ?? (err as any)?.message ?? '';
-      const logPath = join(tmpdir(), `veyon_cli_error_${Date.now()}.log`);
-      const content = `ERROR: ${String(err)}\n\nSTDOUT:\n${stdout}\n\nSTDERR:\n${stderr}`;
-      await fs.writeFile(logPath, content, 'utf8').catch(() => {});
-      throw new InternalServerErrorException(`Error al ejecutar veyon-cli. Ver log: ${logPath}`);
+      throw new InternalServerErrorException(`Error ejecutando Veyon CLI: ${err.message || err}`);
     }
 
+    // 7. Limpieza del archivo temporal
     await fs.unlink(filePath).catch(() => {});
 
-    return { message: `Configuración de Veyon actualizada con ${networkObjects.length} computadoras` };
+    return { message: `Veyon sincronizado con éxito. ${pcsFiltradas.length} pantallas cargadas.` };
   }
 }

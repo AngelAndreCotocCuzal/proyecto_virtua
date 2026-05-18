@@ -1,4 +1,4 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
+import { Controller, Post, UseGuards } from '@nestjs/common';
 import { VeyonService } from './veyon.service';
 import { JwtDocenteGuard } from '../auth/guards/jwt-docente.guard';
 
@@ -7,8 +7,8 @@ export class VeyonController {
   constructor(private readonly veyonService: VeyonService) {}
 
   @UseGuards(JwtDocenteGuard)
-  @Get('exportar')
-  async exportar() {
-    return this.veyonService.exportar();
+  @Post('aplicar') // Cambiado a POST y renombrado a 'aplicar' para hacer match con el frontend
+  async aplicarVeyon() {
+    return this.veyonService.aplicarVeyon();
   }
 }

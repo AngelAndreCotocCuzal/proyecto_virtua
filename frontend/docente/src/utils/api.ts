@@ -8,13 +8,14 @@ async function fetchWithFallback(path: string, init: RequestInit){
 }
 
 export async function requestJson(method: string, path: string, token: string|null, body?: JsonBody){
+  const hasBody = body !== undefined && body !== null
   return fetchWithFallback(path, {
     method,
     headers: {
-      'Content-Type': 'application/json',
+      ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    body: hasBody ? JSON.stringify(body) : undefined,
   })
 }
 

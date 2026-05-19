@@ -52,6 +52,11 @@ export class AgenteService {
     return this.pcRepo.save(pc);
   }
 
+  async limpiarSala() {
+    await this.pcRepo.clear();
+    return { mensaje: 'Sala de red limpiada correctamente' };
+  }
+
   async listPcs() {
     const pcs = await this.pcRepo.find({ relations: ['alumno'] });
     return pcs.map((p) => ({ id: p.id, mac: p.mac, ip: p.ip, en_linea: p.en_linea, ultimo_heartbeat: p.ultimo_heartbeat, alumno: p.alumno ? { id: p.alumno.id, carnet: p.alumno.carnet, nombre: p.alumno.nombre } : null }));

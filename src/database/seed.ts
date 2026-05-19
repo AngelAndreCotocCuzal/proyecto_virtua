@@ -33,27 +33,32 @@ async function seed(): Promise<void> {
     docente = await docenteRepo.save(docente);
   }
 
-  const cursosData = [
+  const horarios = [
+    { hora_inicio: '08:30', hora_fin: '09:50' },
+    { hora_inicio: '11:50', hora_fin: '13:10' },
+  ];
+
+  const diasSemana = ['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado'];
+
+  const cursosData = diasSemana.flatMap((dia_semana, index) => [
     {
       nombre: 'Programación Web',
-      dia_semana: 'Lunes',
-      hora_inicio: '08:30',
-      hora_fin: '09:50',
-      iso_requerida: 'progra-web',
+      dia_semana,
+      ...horarios[0],
+      iso_requerida: `progra-web-${index + 1}`,
     },
     {
       nombre: 'Virtualización',
-      dia_semana: 'Lunes',
-      hora_inicio: '11:50',
-      hora_fin: '13:10',
-      iso_requerida: 'virtualizacion',
+      dia_semana,
+      ...horarios[1],
+      iso_requerida: `virtualizacion-${index + 1}`,
     },
-  ];
+  ]);
 
   const cursos: Curso[] = [];
   for (const cursoData of cursosData) {
     let curso = await cursoRepo.findOne({
-      where: { nombre: cursoData.nombre },
+      where: { nombre: cursoData.nombre, dia_semana: cursoData.dia_semana },
     });
 
     if (!curso) {
@@ -69,9 +74,9 @@ async function seed(): Promise<void> {
 
   const alumnoPasswordHash = await bcrypt.hash('alumno123', 10);
   const alumnosData = [
-    { carnet: '2023001', nombre: 'Alumno 1' },
-    { carnet: '2023002', nombre: 'Alumno 2' },
-    { carnet: '2023003', nombre: 'Alumno 3' },
+    { carnet: '2023001', nombre: 'Daniel Sajvin' },
+    { carnet: '2023002', nombre: 'Angel Cotoc' },
+    { carnet: '2023003', nombre: 'Allan Perez' },
   ];
 
   const alumnos: Alumno[] = [];
@@ -85,8 +90,12 @@ async function seed(): Promise<void> {
         ...alumnoData,
         password_hash: alumnoPasswordHash,
       });
-      alumno = await alumnoRepo.save(alumno);
+    } else {
+      alumno.nombre = alumnoData.nombre;
+      alumno.password_hash = alumnoPasswordHash;
     }
+
+    alumno = await alumnoRepo.save(alumno);
 
     alumnos.push(alumno);
   }

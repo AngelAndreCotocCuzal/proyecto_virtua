@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Asistencia } from '../database/entities/asistencia.entity';
@@ -22,39 +22,42 @@ export class AsistenciaService {
   ) {}
 
   async loginAlumno(alumnoId: number, ip: string) {
-    const sesionId = this.controlState.sesion_activa_id;
-    if (!sesionId) throw new NotFoundException('No hay sesión activa');
-
-    const sesion = await this.sesionRepo.findOne({ where: { id: sesionId } });
-    if (!sesion) throw new NotFoundException('Sesión activa no encontrada');
+    const sessionId = this.controlState.sesion_activa_id;
+    if (!sessionId) throw new NotFoundException('No hay sesión activa');
 
     const alumno = await this.alumnoRepo.findOne({ where: { id: alumnoId } });
     if (!alumno) throw new NotFoundException('Alumno no encontrado');
 
-    // Buscar en la tabla de agentes si existe una PC registrada con la IP actual del alumno
-    const pcAgente = await this.pcRepo.findOne({ where: { ip } });
-    const resolvedMac = pcAgente ? pcAgente.mac : null;
+    // 🚨 BUENA PRÁCTICA: Buscamos si Python ya reportó esta IP.
+    const pc = await this.pcRepo.findOne({ where: { ip } });
+    if (!pc) {
+      // Si el alumno fue más rápido que el script de Python, le pedimos que espere.
+      throw new BadRequestException('Sincronizando seguridad de red. Por favor, intenta ingresar en 5 segundos.');
+    }
 
-    let asistencia = await this.asistenciaRepo.findOne({ 
-      where: { sesion: { id: sesionId }, alumno: { id: alumnoId } } 
+    // Si Python ya había registrado la máquina, vinculamos al alumno de forma segura
+    pc.alumno = alumno;
+    pc.en_linea = true;
+    await this.pcRepo.save(pc);
+
+    let asistencia = await this.asistenciaRepo.findOne({
+      where: { sesion: { id: sessionId }, alumno: { id: alumnoId } }
     });
 
     if (!asistencia) {
-      asistencia = this.asistenciaRepo.create({ 
-        sesion, 
-        alumno, 
-        ip: ip, 
-        mac: resolvedMac, // Vinculación automática de la MAC de hardware
-        confirmada: false 
+      asistencia = this.asistenciaRepo.create({
+        sesion: { id: sessionId },
+        alumno,
+        ip,
+        mac: pc.mac, // 👈 Extraemos la MAC física desde la base de datos, no del navegador
+        confirmada: false
       });
-      asistencia = await this.asistenciaRepo.save(asistencia);
     } else {
-      // Si el registro ya existía pero no tenía datos de red, actualizar los campos
       asistencia.ip = ip;
-      asistencia.mac = resolvedMac;
-      asistencia = await this.asistenciaRepo.save(asistencia);
+      asistencia.mac = pc.mac;
     }
-    return asistencia;
+
+    return this.asistenciaRepo.save(asistencia);
   }
 
   async pendientes() {

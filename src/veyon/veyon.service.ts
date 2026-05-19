@@ -10,6 +10,7 @@ import { join } from 'path';
 import { promises as fs } from 'fs';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import { In } from 'typeorm'; 
 
 const execFileAsync = promisify(execFile);
 
@@ -51,11 +52,14 @@ export class VeyonService {
       }
     }
 
-    // 2. Obtener las PCs que el Agente Python mantiene "en_linea"
+    /// 2. Obtener las PCs que el Agente Python mantiene "en_linea"
     const pcsEnLinea = await this.pcRepo.find({ where: { en_linea: true } });
 
     // Filtrar las PCs que correspondan únicamente a los alumnos confirmados
-    const pcsFiltradas = pcsEnLinea.filter(pc => macsValidas.includes(pc.mac.toLowerCase().trim()));
+    // 2. Buscar las PCs correspondientes a las MACs confirmadas sin importar si están marcadas como ONLINE/OFFLINE
+    const pcsFiltradas = await this.pcRepo.find({
+      where: { mac: In(macsValidas) }
+    });
 
     if (pcsFiltradas.length === 0) {
       return { message: 'Veyon no se actualizó: No hay PCs en línea que coincidan con asistencias confirmadas.' };

@@ -3,7 +3,7 @@ import { AgenteService } from './agente.service';
 import { RegisterAgenteDto } from './dto/register-agente.dto';
 import { HeartbeatDto } from './dto/heartbeat.dto';
 
-@Controller('api/agente') // Cambiado de 'agente' a 'api/agente' para hacer match con la ISO
+@Controller('agente') // ¡Regresamos a 'agente'! NestJS le agregará el '/api' automáticamente gracias a main.ts
 export class AgenteController {
   constructor(private readonly agenteService: AgenteService) {}
 

@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { Asistencia } from '../database/entities/asistencia.entity';
 import { Sesion } from '../database/entities/sesion.entity';
 import { Alumno } from '../database/entities/alumno.entity';
+import { PcConectada } from '../database/entities/pc-conectada.entity'; // Importación añadida
 import { ControlState } from '../control/control.state';
 
 @Injectable()
@@ -15,10 +16,12 @@ export class AsistenciaService {
     private sesionRepo: Repository<Sesion>,
     @InjectRepository(Alumno)
     private alumnoRepo: Repository<Alumno>,
+    @InjectRepository(PcConectada) // Inyección añadida para resolver las MACs de red
+    private pcRepo: Repository<PcConectada>,
     private controlState: ControlState,
   ) {}
 
-  async loginAlumno(alumnoId: number, ip?: string, mac?: string) {
+  async loginAlumno(alumnoId: number, ip: string) {
     const sesionId = this.controlState.sesion_activa_id;
     if (!sesionId) throw new NotFoundException('No hay sesión activa');
 
@@ -28,9 +31,27 @@ export class AsistenciaService {
     const alumno = await this.alumnoRepo.findOne({ where: { id: alumnoId } });
     if (!alumno) throw new NotFoundException('Alumno no encontrado');
 
-    let asistencia = await this.asistenciaRepo.findOne({ where: { sesion: { id: sesionId }, alumno: { id: alumnoId } } });
+    // Buscar en la tabla de agentes si existe una PC registrada con la IP actual del alumno
+    const pcAgente = await this.pcRepo.findOne({ where: { ip } });
+    const resolvedMac = pcAgente ? pcAgente.mac : null;
+
+    let asistencia = await this.asistenciaRepo.findOne({ 
+      where: { sesion: { id: sesionId }, alumno: { id: alumnoId } } 
+    });
+
     if (!asistencia) {
-      asistencia = this.asistenciaRepo.create({ sesion, alumno, ip: ip ?? null, mac: mac ?? null, confirmada: false });
+      asistencia = this.asistenciaRepo.create({ 
+        sesion, 
+        alumno, 
+        ip: ip, 
+        mac: resolvedMac, // Vinculación automática de la MAC de hardware
+        confirmada: false 
+      });
+      asistencia = await this.asistenciaRepo.save(asistencia);
+    } else {
+      // Si el registro ya existía pero no tenía datos de red, actualizar los campos
+      asistencia.ip = ip;
+      asistencia.mac = resolvedMac;
       asistencia = await this.asistenciaRepo.save(asistencia);
     }
     return asistencia;
@@ -39,8 +60,17 @@ export class AsistenciaService {
   async pendientes() {
     const sesionId = this.controlState.sesion_activa_id;
     if (!sesionId) return [];
-    const pendientes = await this.asistenciaRepo.find({ where: { sesion: { id: sesionId }, confirmada: false }, relations: ['alumno'] });
-    return pendientes.map((p) => ({ id: p.id, alumno: { id: p.alumno.id, carnet: p.alumno.carnet, nombre: p.alumno.nombre }, ip: p.ip, mac: p.mac, timestamp_login: p.timestamp_login }));
+    const pendientes = await this.asistenciaRepo.find({ 
+      where: { sesion: { id: sesionId }, confirmada: false }, 
+      relations: ['alumno'] 
+    });
+    return pendientes.map((p) => ({ 
+      id: p.id, 
+      alumno: { id: p.alumno.id, carnet: p.alumno.carnet, nombre: p.alumno.nombre }, 
+      ip: p.ip, 
+      mac: p.mac, 
+      timestamp_login: p.timestamp_login 
+    }));
   }
 
   async confirmar(sesionId: number | undefined, alumnoId: number | undefined, todos = false) {
@@ -68,6 +98,14 @@ export class AsistenciaService {
 
   async reporte(sesionId: number) {
     const asistencias = await this.asistenciaRepo.find({ where: { sesion: { id: sesionId } }, relations: ['alumno'] });
-    return asistencias.map((a) => ({ id: a.id, alumno: { id: a.alumno.id, carnet: a.alumno.carnet, nombre: a.alumno.nombre }, ip: a.ip, mac: a.mac, confirmada: a.confirmada, timestamp_login: a.timestamp_login, timestamp_confirmacion: a.timestamp_confirmacion }));
+    return asistencias.map((a) => ({ 
+      id: a.id, 
+      alumno: { id: a.alumno.id, carnet: a.alumno.carnet, nombre: a.alumno.nombre }, 
+      ip: a.ip, 
+      mac: a.mac, 
+      confirmada: a.confirmada, 
+      timestamp_login: a.timestamp_login, 
+      timestamp_confirmacion: a.timestamp_confirmacion 
+    }));
   }
 }

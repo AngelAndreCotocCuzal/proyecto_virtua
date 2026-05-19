@@ -1,4 +1,4 @@
-export const API_BASE = `${window.location.protocol}//${window.location.hostname}:3000/api`
+export const API_BASE = 'http://192.168.0.5:3000/api'
 
 export async function getJson(path: string, token?: string|null){
   const res = await fetch(`${API_BASE}${path}`, { headers: { ...(token?{ Authorization: `Bearer ${token}` }: {}) } })

@@ -56,7 +56,7 @@ export default function Dashboard({ token, onLogout }: any){
 
   // Alternar selección usando el ID del ALUMNO (Requerido por tu Backend)
   function toggleSelect(alumnoId: number){ 
-    setSelectedAlumnos(s => ({ ...s, [alumnoId]: !s[id] })) 
+    setSelectedAlumnos(s => ({ ...s, [alumnoId]: !s[alumnoId] })) 
   }
 
   // 3. Confirmar Únicamente los Alumnos Seleccionados vía Checkbox

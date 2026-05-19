@@ -1,9 +1,9 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post } from '@nestjs/common';
 import { AgenteService } from './agente.service';
 import { RegisterAgenteDto } from './dto/register-agente.dto';
 import { HeartbeatDto } from './dto/heartbeat.dto';
 
-@Controller('agente')
+@Controller('agente') // ¡Regresamos a 'agente'! NestJS le agregará el '/api' automáticamente gracias a main.ts
 export class AgenteController {
   constructor(private readonly agenteService: AgenteService) {}
 

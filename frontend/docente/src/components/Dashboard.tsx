@@ -16,6 +16,7 @@ export default function Dashboard({ token, onLogout }: any){
   const [sesionActivaId, setSesionActivaId] = useState<number | null>(null)
   const [selectedAlumnos, setSelectedAlumnos] = useState<Record<number, boolean>>({})
   const [toast, setToast] = useState('')
+  const [veyonLoading, setVeyonLoading] = useState(false)
   const pollRef = useRef<any>(null)
 
   function normalizarTexto(texto: string){
@@ -130,6 +131,7 @@ export default function Dashboard({ token, onLogout }: any){
 
   // Disparador del Módulo Veyon Automatizado
   async function aplicarVeyon(){
+    setVeyonLoading(true)
     try { 
       const res = await postJson('/veyon/aplicar', token)
       if(!res.ok) throw new Error(await res.text())
@@ -139,6 +141,8 @@ export default function Dashboard({ token, onLogout }: any){
     } catch(e: any) { 
       setToast('Error aplicando Veyon CLI')
       setTimeout(() => setToast(''), 4000) 
+    } finally {
+      setVeyonLoading(false)
     }
   }
 
@@ -231,24 +235,34 @@ export default function Dashboard({ token, onLogout }: any){
             <div className="bg-white p-4 rounded shadow">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <h2 className="font-semibold">PCs en Red Local (Agente)</h2>
-                <button
-                  className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-600 transition hover:border-slate-300 hover:bg-slate-100 hover:text-slate-800"
-                  onClick={async () => {
-                    try {
-                      const res = await requestJson('DELETE', '/agente/limpiar', token)
-                      if (!res.ok) throw new Error(await res.text())
-                      setToast('Sala limpiada correctamente')
-                      setTimeout(() => setToast(''), 2500)
-                      fetchDashboardData()
-                    } catch (err) {
-                      setToast('Error al limpiar la sala')
-                      setTimeout(() => setToast(''), 3000)
-                    }
-                  }}
-                >
-                  <span>🧹</span>
-                  <span>Limpiar Sala</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    className="inline-flex items-center gap-1 rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-700 transition hover:border-indigo-300 hover:bg-indigo-100 hover:text-indigo-800 disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={veyonLoading}
+                    onClick={aplicarVeyon}
+                  >
+                    {veyonLoading ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" /> : <span>🖧</span>}
+                    <span>{veyonLoading ? 'Sincronizando...' : 'Sincronizar Veyon'}</span>
+                  </button>
+                  <button
+                    className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-600 transition hover:border-slate-300 hover:bg-slate-100 hover:text-slate-800"
+                    onClick={async () => {
+                      try {
+                        const res = await requestJson('DELETE', '/agente/limpiar', token)
+                        if (!res.ok) throw new Error(await res.text())
+                        setToast('Sala limpiada correctamente')
+                        setTimeout(() => setToast(''), 2500)
+                        fetchDashboardData()
+                      } catch (err) {
+                        setToast('Error al limpiar la sala')
+                        setTimeout(() => setToast(''), 3000)
+                      }
+                    }}
+                  >
+                    <span>🧹</span>
+                    <span>Limpiar Sala</span>
+                  </button>
+                </div>
               </div>
               <div className="grid grid-cols-1 gap-2 max-h-96 overflow-auto">
                 {pcs.length === 0 ? <p className="text-sm text-slate-400">No hay agentes reportando tráfico...</p> : 
